@@ -1,0 +1,26 @@
+# Build artifacts
+/build/
+/target/
+erl_crash.dump
+
+# Dependencies
+/deps/
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Gleam
+*.beam
+*.ez
+/doc/
+
+# Test artifacts
+/cover/
