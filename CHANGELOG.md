@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Validated
+
+- **viva_math/attractor** - Validated by DeepSeek R1 671B
+  - PAD coordinates accurate (±0.05 from Mehrabian 1996)
+  - Softmax basin weights mathematically sound
+  - Linear spring force correct for O-U dynamics
+  - Suggested improvements: dimensional scaling, contextual modulation
+
+- **viva_math/entropy** - Validated by DeepSeek R1 671B
+  - Natural log (nats) correct for continuous emotion space
+  - Mutual information formula verified
+  - JS Divergence recommended for memory consolidation (bounded, symmetric)
+  - Numerical stability: use ε=1e-10 clipping
+
+### References (Validation)
+
+- DeepSeek R1 671B (2025-01-24) - Mathematical validation via HuggingChat
+- Mehrabian (1996) - PAD coordinates verified within ±0.05
+- Pessoa (2008) "The Cognitive-Emotional Brain" - Linear dynamics support
+- Fontaine et al. (2007) - Dimensional scaling recommendation
+
 ## [1.1.0] - 2025-01-24
 
 ### Added
