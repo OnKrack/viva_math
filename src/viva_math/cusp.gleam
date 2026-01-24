@@ -15,6 +15,7 @@
 //// - Van der Maas et al. (2003) "Sudden Transitions in Attitudes"
 
 import gleam/float
+import gleam/list
 import gleam_community/maths
 import viva_math/common
 
@@ -308,5 +309,91 @@ fn sort_three(a: Float, b: Float, c: Float) -> #(Float, Float, Float) {
             False -> #(c, b, a)
           }
       }
+  }
+}
+
+// ============================================================================
+// STOCHASTIC CUSP (DeepSeek R1 proposal)
+// ============================================================================
+
+/// Stochastic cusp parameters with noise intensity.
+pub type StochasticCuspParams {
+  StochasticCuspParams(
+    /// Normal factor (bifurcation parameter)
+    alpha: Float,
+    /// Asymmetry factor (splitting factor)
+    beta: Float,
+    /// Noise intensity σ
+    sigma: Float,
+    /// Random seed for reproducibility
+    seed: Int,
+  )
+}
+
+/// Stochastic gradient with Wiener process noise.
+///
+/// dV/dx = x³ + αx + β + σξ(t)
+///
+/// Where ξ(t) is white noise (approximated deterministically).
+/// Proposed by DeepSeek R1 for modeling emotional uncertainty.
+pub fn stochastic_gradient(
+  x: Float,
+  params: StochasticCuspParams,
+  step: Int,
+) -> Float {
+  let deterministic = gradient(x, CuspParams(alpha: params.alpha, beta: params.beta))
+  let noise = common.deterministic_noise(step, params.seed)
+  deterministic +. params.sigma *. noise
+}
+
+/// Stochastic Euler-Maruyama integration step.
+///
+/// x(t+dt) = x(t) - gradient(x) × dt + σ × √dt × ξ(t)
+///
+/// Uses DeepSeek R1 recommendation for stochastic dynamics.
+pub fn stochastic_step(
+  x: Float,
+  params: StochasticCuspParams,
+  dt: Float,
+  step: Int,
+) -> Float {
+  let grad = gradient(x, CuspParams(alpha: params.alpha, beta: params.beta))
+  let noise = common.wiener_increment(step, params.seed, dt)
+  x -. grad *. dt +. params.sigma *. noise
+}
+
+/// Simulate stochastic cusp trajectory.
+///
+/// Returns list of states over time.
+pub fn simulate_stochastic(
+  initial_x: Float,
+  params: StochasticCuspParams,
+  dt: Float,
+  steps: Int,
+) -> List(Float) {
+  simulate_stochastic_helper(initial_x, params, dt, steps, 0, [initial_x])
+}
+
+fn simulate_stochastic_helper(
+  x: Float,
+  params: StochasticCuspParams,
+  dt: Float,
+  total_steps: Int,
+  current_step: Int,
+  acc: List(Float),
+) -> List(Float) {
+  case current_step >= total_steps {
+    True -> list.reverse(acc)
+    False -> {
+      let new_x = stochastic_step(x, params, dt, current_step)
+      simulate_stochastic_helper(
+        new_x,
+        params,
+        dt,
+        total_steps,
+        current_step + 1,
+        [new_x, ..acc],
+      )
+    }
   }
 }

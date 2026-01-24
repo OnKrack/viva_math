@@ -91,8 +91,10 @@ pub fn precision_weighted_prediction_error(
 
 /// Compute KL divergence between Gaussian distributions (closed form).
 ///
-/// For two Gaussians with same variance:
-/// D_KL(N(μ₁,σ²) || N(μ₂,σ²)) = (μ₁ - μ₂)² / (2σ²)
+/// CORRECTED per DeepSeek R1 validation - Full KL for Gaussians:
+/// D_KL(N(μ₁,σ₁²) || N(μ₂,σ₂²)) = (μ₁ - μ₂)²/(2σ₂²) + (σ₁² - σ₂²)/(2σ₂²) - 1/2
+///
+/// When variances are equal (σ₁ = σ₂), reduces to: (μ₁ - μ₂)²/(2σ²)
 ///
 /// This measures how much the posterior (current belief) diverges from prior.
 pub fn gaussian_kl_divergence(
@@ -104,6 +106,38 @@ pub fn gaussian_kl_divergence(
   case variance <=. 0.0 {
     True -> 0.0
     False -> diff_squared /. { 2.0 *. variance }
+  }
+}
+
+/// Full KL divergence between Gaussians with different variances.
+///
+/// D_KL(N(μ₁,σ₁²) || N(μ₂,σ₂²)) = log(σ₂/σ₁) + (σ₁² + (μ₁-μ₂)²)/(2σ₂²) - 1/2
+///
+/// This is the complete formula from DeepSeek R1 validation.
+pub fn gaussian_kl_divergence_full(
+  posterior_mean: Vec3,
+  prior_mean: Vec3,
+  posterior_variance: Float,
+  prior_variance: Float,
+) -> Float {
+  case posterior_variance <=. 0.0 || prior_variance <=. 0.0 {
+    True -> 0.0
+    False -> {
+      let diff_squared = vector.distance_squared(posterior_mean, prior_mean)
+
+      // log(σ₂) - log(σ₁) = 0.5 * (log(σ₂²) - log(σ₁²))
+      // Using separate logs for numerical stability when variances are small
+      let log_ratio = case maths.natural_logarithm(prior_variance), maths.natural_logarithm(posterior_variance) {
+        Ok(log_prior), Ok(log_posterior) -> { log_prior -. log_posterior } /. 2.0
+        _, _ -> 0.0
+      }
+
+      // (σ₁² + (μ₁-μ₂)²) / (2σ₂²) term
+      let ratio_term = { posterior_variance +. diff_squared } /. { 2.0 *. prior_variance }
+
+      // Full KL: log(σ₂/σ₁) + (σ₁² + (μ₁-μ₂)²)/(2σ₂²) - 1/2
+      log_ratio +. ratio_term -. 0.5
+    }
   }
 }
 

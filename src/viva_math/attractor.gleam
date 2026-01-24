@@ -78,7 +78,13 @@ pub fn nearest(
   }
 }
 
-/// Calculate influence weights for all attractors using softmax of inverse distances.
+/// Calculate influence weights for all attractors using softmax of negative distances.
+///
+/// CORRECTED per DeepSeek R1 validation:
+/// w_i = exp(-γ × d_i) / Σ_j exp(-γ × d_j)
+///
+/// Where γ = 1/temperature (higher temp = softer weights, lower temp = sharper).
+/// This is more numerically stable than 1/d and matches Boltzmann distribution.
 ///
 /// Closer attractors have higher weights. The temperature parameter controls
 /// how "sharp" the weighting is (lower temp = more weight on nearest).
@@ -90,25 +96,28 @@ pub fn basin_weights(
   case attractors {
     [] -> []
     _ -> {
-      // Calculate inverse distances (add small epsilon to avoid division by zero)
-      let epsilon = 0.001
-      let inv_distances =
+      // γ = 1/temperature (avoid division by zero)
+      let gamma = case temperature <=. 0.0 {
+        True -> 1.0
+        False -> 1.0 /. temperature
+      }
+
+      // Calculate -γ × distance for each attractor
+      let neg_gamma_distances =
         list.map(attractors, fn(attr) {
-          let dist = vector.distance(point, attr.position) +. epsilon
-          #(attr, 1.0 /. dist)
+          let dist = vector.distance(point, attr.position)
+          #(attr, 0.0 -. gamma *. dist)
         })
 
-      // Apply temperature scaling
-      let scaled =
-        list.map(inv_distances, fn(pair) {
-          #(pair.0, pair.1 /. temperature)
-        })
-
-      // Softmax normalization
+      // Max-subtraction for numerical stability (pattern from viva_glyph)
       let max_val =
-        list.fold(scaled, 0.0, fn(acc, pair) { float.max(acc, pair.1) })
+        list.fold(neg_gamma_distances, -1000.0, fn(acc, pair) {
+          float.max(acc, pair.1)
+        })
+
+      // Softmax: exp(-γd - max) / sum
       let exps =
-        list.map(scaled, fn(pair) {
+        list.map(neg_gamma_distances, fn(pair) {
           #(pair.0, maths.exponential(pair.1 -. max_val))
         })
       let sum = list.fold(exps, 0.0, fn(acc, pair) { acc +. pair.1 })

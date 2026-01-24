@@ -398,6 +398,161 @@ pub fn jensen_shannon_symmetric_test() {
 }
 
 // ============================================================================
+// NEW: Stochastic cusp tests (DeepSeek R1 proposals)
+// ============================================================================
+
+pub fn stochastic_cusp_deterministic_test() {
+  // Same seed should produce same noise
+  let noise1 = common.deterministic_noise(0, 42)
+  let noise2 = common.deterministic_noise(0, 42)
+  should.be_true(is_close(noise1, noise2, 0.0001))
+}
+
+pub fn stochastic_cusp_different_steps_test() {
+  // Different steps should produce different noise
+  let noise1 = common.deterministic_noise(0, 42)
+  let noise2 = common.deterministic_noise(1, 42)
+  should.be_false(is_close(noise1, noise2, 0.0001))
+}
+
+pub fn stochastic_cusp_range_test() {
+  // Noise should be in [-1, 1]
+  let noise = common.deterministic_noise(100, 999)
+  should.be_true(noise >=. -1.0 && noise <=. 1.0)
+}
+
+pub fn stochastic_simulation_length_test() {
+  // Simulation should return correct number of steps
+  let params = cusp.StochasticCuspParams(alpha: -1.0, beta: 0.0, sigma: 0.1, seed: 42)
+  let trajectory = cusp.simulate_stochastic(0.0, params, 0.01, 10)
+  should.equal(list.length(trajectory), 11)  // initial + 10 steps
+}
+
+// ============================================================================
+// NEW: Basin weights with exp(-γd) tests
+// ============================================================================
+
+pub fn basin_weights_exp_sum_to_one_test() {
+  // Basin weights should sum to 1.0
+  let attractors = attractor.emotional_attractors()
+  let point = vector.Vec3(0.0, 0.0, 0.0)
+  let weights = attractor.basin_weights(point, attractors, 1.0)
+  let sum = list.fold(weights, 0.0, fn(acc, pair) { acc +. pair.1 })
+  should.be_true(is_close(sum, 1.0, 0.01))
+}
+
+pub fn basin_weights_temperature_effect_test() {
+  // Lower temperature should make weights sharper (max weight higher)
+  let attractors = attractor.emotional_attractors()
+  let point = vector.Vec3(0.7, 0.4, 0.3)  // Near joy
+
+  let weights_warm = attractor.basin_weights(point, attractors, 2.0)
+  let weights_cold = attractor.basin_weights(point, attractors, 0.5)
+
+  let max_warm = list.fold(weights_warm, 0.0, fn(acc, p) { float.max(acc, p.1) })
+  let max_cold = list.fold(weights_cold, 0.0, fn(acc, p) { float.max(acc, p.1) })
+
+  // Cold (low temp) should have higher max weight
+  should.be_true(max_cold >. max_warm)
+}
+
+// ============================================================================
+// NEW: Hybrid entropy tests
+// ============================================================================
+
+pub fn hybrid_entropy_blend_test() {
+  // Blend of two distributions
+  let p1 = [0.5, 0.5]  // H = 1.0
+  let p2 = [1.0, 0.0]  // H = 0.0
+
+  let h_blend = entropy.hybrid_shannon(p1, p2, 0.5)
+  // Should be average: 0.5 * 1.0 + 0.5 * 0.0 = 0.5
+  should.be_true(is_close(h_blend, 0.5, 0.01))
+}
+
+pub fn hybrid_entropy_alpha_zero_test() {
+  // Alpha = 0 should give H(p2)
+  let p1 = [0.5, 0.5]  // H = 1.0
+  let p2 = [1.0, 0.0]  // H = 0.0
+
+  let h = entropy.hybrid_shannon(p1, p2, 0.0)
+  should.be_true(is_close(h, 0.0, 0.01))
+}
+
+pub fn hybrid_entropy_alpha_one_test() {
+  // Alpha = 1 should give H(p1)
+  let p1 = [0.5, 0.5]  // H = 1.0
+  let p2 = [1.0, 0.0]  // H = 0.0
+
+  let h = entropy.hybrid_shannon(p1, p2, 1.0)
+  should.be_true(is_close(h, 1.0, 0.01))
+}
+
+// ============================================================================
+// NEW: KL with sensitivity tests
+// ============================================================================
+
+pub fn kl_sensitivity_standard_test() {
+  // Standard sensitivity should match regular KL
+  let p = [0.5, 0.5]
+  let q = [0.6, 0.4]
+
+  let assert Ok(kl_standard) = entropy.kl_divergence(p, q)
+  let assert Ok(kl_sens) = entropy.kl_divergence_with_sensitivity(p, q, entropy.Standard)
+
+  should.be_true(is_close(kl_standard, kl_sens, 0.001))
+}
+
+pub fn kl_sensitivity_arousal_increases_test() {
+  // Higher arousal should increase KL (more sensitive)
+  let p = [0.9, 0.1]
+  let q = [0.5, 0.5]
+
+  let assert Ok(kl_low) = entropy.kl_divergence_with_sensitivity(p, q, entropy.ArousalWeighted(0.2))
+  let assert Ok(kl_high) = entropy.kl_divergence_with_sensitivity(p, q, entropy.ArousalWeighted(0.8))
+
+  should.be_true(kl_high >. kl_low)
+}
+
+// ============================================================================
+// NEW: Renyi entropy tests
+// ============================================================================
+
+pub fn renyi_order_one_is_shannon_test() {
+  // Renyi entropy with α=1 should equal Shannon entropy
+  let p = [0.5, 0.5]
+  let assert Ok(h_renyi) = entropy.renyi(p, 1.0)
+  let h_shannon = entropy.shannon(p)
+  should.be_true(is_close(h_renyi, h_shannon, 0.001))
+}
+
+pub fn renyi_order_two_collision_test() {
+  // Renyi entropy with α=2 (collision entropy)
+  // For uniform [0.5, 0.5]: H_2 = -log2(0.5² + 0.5²) = -log2(0.5) = 1.0
+  let p = [0.5, 0.5]
+  let assert Ok(h2) = entropy.renyi(p, 2.0)
+  should.be_true(is_close(h2, 1.0, 0.01))
+}
+
+// ============================================================================
+// NEW: Full KL divergence tests
+// ============================================================================
+
+pub fn gaussian_kl_full_equal_variance_test() {
+  // When variances are equal, full KL should reduce to simple form
+  let mean1 = vector.Vec3(0.5, 0.0, 0.0)
+  let mean2 = vector.Vec3(0.0, 0.0, 0.0)
+
+  let kl_simple = free_energy.gaussian_kl_divergence(mean1, mean2, 1.0)
+  let kl_full = free_energy.gaussian_kl_divergence_full(mean1, mean2, 1.0, 1.0)
+
+  // Full KL with equal variances = log(1) + (σ² + d²)/(2σ²) - 0.5
+  // = 0 + (1 + 0.25)/2 - 0.5 = 0.625 - 0.5 = 0.125
+  // Simple KL = d²/(2σ²) = 0.25/2 = 0.125
+  should.be_true(is_close(kl_simple, kl_full, 0.01))
+}
+
+// ============================================================================
 // Helper functions
 // ============================================================================
 

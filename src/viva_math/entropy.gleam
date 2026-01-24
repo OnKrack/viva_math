@@ -249,3 +249,171 @@ fn int_to_float(n: Int) -> Float {
     }
   }
 }
+
+// ============================================================================
+// HYBRID EMOTIONAL STATES (DeepSeek R1 proposals)
+// ============================================================================
+
+/// Hybrid entropy for mixed emotional states.
+///
+/// H_hybrid(X) = α × H(X₁) + (1 - α) × H(X₂)
+///
+/// Proposed by DeepSeek R1 for modeling hybrid emotions.
+/// α ∈ [0, 1] controls the blend between two emotional distributions.
+///
+/// ## Examples
+///
+/// ```gleam
+/// hybrid_shannon([0.5, 0.5], [0.7, 0.3], 0.5)  // Blend of two emotions
+/// ```
+pub fn hybrid_shannon(
+  probs1: List(Float),
+  probs2: List(Float),
+  alpha: Float,
+) -> Float {
+  let h1 = shannon(probs1)
+  let h2 = shannon(probs2)
+  let clamped_alpha = clamp_unit(alpha)
+  clamped_alpha *. h1 +. { 1.0 -. clamped_alpha } *. h2
+}
+
+/// Clamp value to [0, 1]
+fn clamp_unit(value: Float) -> Float {
+  case value <. 0.0 {
+    True -> 0.0
+    False ->
+      case value >. 1.0 {
+        True -> 1.0
+        False -> value
+      }
+  }
+}
+
+/// KL divergence sensitivity types.
+///
+/// Controls how sensitive the divergence is to differences.
+pub type KlSensitivity {
+  /// Standard KL divergence
+  Standard
+  /// Arousal-weighted: γ increases with arousal (sharper for high arousal)
+  ArousalWeighted(arousal: Float)
+  /// Custom gamma parameter
+  CustomGamma(gamma: Float)
+}
+
+/// KL divergence with sensitivity parameter.
+///
+/// D_KL^γ(P || Q) = γ × (μ₁ - μ₂)² + D_KL(P || Q)
+///
+/// Proposed by DeepSeek R1 for arousal-modulated divergence.
+/// Higher γ = more sensitive to mean differences.
+pub fn kl_divergence_with_sensitivity(
+  p: List(Float),
+  q: List(Float),
+  sensitivity: KlSensitivity,
+) -> Result(Float, Nil) {
+  // Get gamma based on sensitivity type
+  let gamma = case sensitivity {
+    Standard -> 0.0
+    ArousalWeighted(arousal) -> {
+      // γ ∝ |arousal|, scaled to [0, 1]
+      let abs_arousal = case arousal >=. 0.0 {
+        True -> arousal
+        False -> 0.0 -. arousal
+      }
+      abs_arousal
+    }
+    CustomGamma(g) -> g
+  }
+
+  // Calculate standard KL
+  case kl_divergence(p, q) {
+    Error(Nil) -> Error(Nil)
+    Ok(standard_kl) -> {
+      // Add sensitivity term: γ × mean_diff²
+      // For discrete distributions, use weighted mean difference
+      let mean_diff_sq = mean_difference_squared(p, q)
+      Ok(gamma *. mean_diff_sq +. standard_kl)
+    }
+  }
+}
+
+/// Calculate squared difference of distribution means.
+fn mean_difference_squared(p: List(Float), q: List(Float)) -> Float {
+  let mean_p = weighted_mean(p)
+  let mean_q = weighted_mean(q)
+  let diff = mean_p -. mean_q
+  diff *. diff
+}
+
+/// Calculate weighted mean of a distribution.
+/// Assumes indices 0, 1, 2, ... as values.
+fn weighted_mean(probs: List(Float)) -> Float {
+  weighted_mean_helper(probs, 0, 0.0, 0.0)
+}
+
+fn weighted_mean_helper(
+  probs: List(Float),
+  index: Int,
+  sum: Float,
+  weight_sum: Float,
+) -> Float {
+  case probs {
+    [] ->
+      case weight_sum == 0.0 {
+        True -> 0.0
+        False -> sum /. weight_sum
+      }
+    [p, ..rest] -> {
+      let idx_float = int_to_float(index)
+      weighted_mean_helper(rest, index + 1, sum +. p *. idx_float, weight_sum +. p)
+    }
+  }
+}
+
+/// Renyi entropy of order α.
+///
+/// H_α(X) = (1/(1-α)) × log(Σ p(x)^α)
+///
+/// Generalizes Shannon entropy (α → 1 gives Shannon).
+/// α = 0: Hartley entropy (log of support size)
+/// α = 2: Collision entropy
+/// α → ∞: Min-entropy
+pub fn renyi(probabilities: List(Float), alpha: Float) -> Result(Float, Nil) {
+  case alpha == 1.0 {
+    True -> Ok(shannon(probabilities))
+    False -> {
+      // Σ p^α
+      let sum_p_alpha =
+        list.fold(probabilities, 0.0, fn(acc, p) {
+          case p <=. 0.0 {
+            True -> acc
+            False -> acc +. power(p, alpha)
+          }
+        })
+
+      case sum_p_alpha <=. 0.0 {
+        True -> Error(Nil)
+        False -> {
+          case maths.logarithm_2(sum_p_alpha) {
+            Ok(log_sum) -> Ok(log_sum /. { 1.0 -. alpha })
+            Error(_) -> Error(Nil)
+          }
+        }
+      }
+    }
+  }
+}
+
+/// Power function using exp(α × ln(x))
+fn power(base: Float, exponent: Float) -> Float {
+  case base <=. 0.0 {
+    True -> 0.0
+    False -> {
+      case maths.natural_logarithm(base) {
+        Ok(ln_base) -> maths.exponential(exponent *. ln_base)
+        Error(_) -> 0.0
+      }
+    }
+  }
+}

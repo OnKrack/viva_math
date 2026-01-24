@@ -185,3 +185,90 @@ pub const pi = maths.pi
 pub const e = maths.e
 
 pub const tau = maths.tau
+
+// ============================================================================
+// STOCHASTIC UTILITIES (Pattern from viva_glyph/codebook.gleam)
+// ============================================================================
+
+/// Deterministic pseudo-random noise generator.
+/// Uses hash-based seeding for reproducibility (no external RNG needed).
+///
+/// Returns value in [-1, 1] range.
+///
+/// ## Examples
+///
+/// ```gleam
+/// deterministic_noise(0, 42)  // -> some value in [-1, 1]
+/// deterministic_noise(0, 42)  // -> same value (deterministic)
+/// ```
+pub fn deterministic_noise(step: Int, seed: Int) -> Float {
+  // Hash-based pseudo-random (pattern from viva_glyph)
+  let hash = { step * 31 + seed * 17 + 7919 } % 1000
+  { int_to_float(hash) -. 500.0 } /. 500.0
+}
+
+/// Generate Wiener process increment (discrete approximation).
+/// dW ≈ √dt × N(0,1) where N is approximated by deterministic noise.
+///
+/// Used for stochastic differential equations.
+///
+/// ## Parameters
+/// - step: Current time step (for determinism)
+/// - seed: Random seed
+/// - dt: Time step size
+///
+/// ## Examples
+///
+/// ```gleam
+/// wiener_increment(0, 42, 0.01)  // -> small noise scaled by √dt
+/// ```
+pub fn wiener_increment(step: Int, seed: Int, dt: Float) -> Float {
+  let noise = deterministic_noise(step, seed)
+  case maths.nth_root(dt, 2) {
+    Ok(sqrt_dt) -> noise *. sqrt_dt
+    Error(_) -> 0.0
+  }
+}
+
+/// Inverse decay rate (pattern from viva_glyph/association.gleam).
+/// η(t) = η₀ / (1 + t/τ)
+///
+/// Used for learning rate decay, consolidation, etc.
+pub fn inverse_decay(base_rate: Float, t: Float, tau: Float) -> Float {
+  case tau <=. 0.0 {
+    True -> base_rate
+    False -> base_rate /. { 1.0 +. t /. tau }
+  }
+}
+
+/// Inverse square root decay.
+/// η(t) = η₀ / √(1 + t/τ)
+pub fn inverse_sqrt_decay(base_rate: Float, t: Float, tau: Float) -> Float {
+  case tau <=. 0.0 {
+    True -> base_rate
+    False -> {
+      case maths.nth_root(1.0 +. t /. tau, 2) {
+        Ok(sqrt_val) -> base_rate /. sqrt_val
+        Error(_) -> base_rate
+      }
+    }
+  }
+}
+
+// Helper: convert int to float
+fn int_to_float(n: Int) -> Float {
+  case n {
+    0 -> 0.0
+    1 -> 1.0
+    _ -> {
+      case n < 0 {
+        True -> 0.0 -. int_to_float(0 - n)
+        False -> {
+          let half = n / 2
+          let remainder = n - half * 2
+          int_to_float(half) *. 2.0 +. int_to_float(remainder)
+        }
+      }
+    }
+  }
+}
