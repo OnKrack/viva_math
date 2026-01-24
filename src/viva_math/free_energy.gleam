@@ -1,9 +1,14 @@
 //// Free Energy Principle (FEP) calculations.
 ////
 //// Based on Karl Friston's work (2010, 2019).
-//// Free Energy approximates surprise/entropy in the brain's predictions.
+//// Free Energy bounds surprise (negative log evidence) and can be decomposed as:
 ////
-//// F ≈ Prediction_Error² + Complexity
+//// F = Π · (μ - o)² + D_KL(q || p)
+////     ↑              ↑
+////     Accuracy       Complexity
+////     (weighted      (deviation
+////     prediction     from priors)
+////     error)
 ////
 //// In VIVA, this is used for interoception - sensing internal state
 //// and minimizing "surprise" through prediction.
@@ -11,8 +16,11 @@
 //// References:
 //// - Friston (2010) "The free-energy principle: a unified brain theory?"
 //// - Parr & Friston (2019) "Generalised free energy and active inference"
+//// - Validated by DeepSeek R1 671B (2025)
 
+import gleam/float
 import gleam/list
+import gleam_community/maths
 import viva_math/vector.{type Vec3}
 
 /// Free Energy state for a system.
@@ -20,82 +28,195 @@ pub type FreeEnergyState {
   FreeEnergyState(
     /// The free energy value (lower is better)
     free_energy: Float,
-    /// Prediction error component
+    /// Prediction error component (precision-weighted)
     prediction_error: Float,
-    /// Complexity/prior divergence component
+    /// Complexity/KL divergence component
     complexity: Float,
-    /// Qualitative feeling based on free energy level
+    /// Precision used for weighting
+    precision: Float,
+    /// Qualitative feeling based on normalized free energy
     feeling: Feeling,
   )
 }
 
 /// Qualitative feeling based on free energy level.
 pub type Feeling {
-  /// Low free energy - predictions match reality
+  /// Low free energy - predictions match reality (F < μ - σ)
   Homeostatic
-  /// Moderate free energy - slight mismatch
+  /// Moderate free energy - slight mismatch (μ - σ ≤ F < μ)
   Surprised
-  /// High free energy - significant mismatch
+  /// High free energy - significant mismatch (μ ≤ F < μ + σ)
   Alarmed
-  /// Very high free energy - system overwhelmed
+  /// Very high free energy - system overwhelmed (F ≥ μ + σ)
   Overwhelmed
 }
 
-/// Compute prediction error between expected and actual state.
-///
-/// Uses squared Euclidean distance for continuous states.
+/// Thresholds for feeling classification.
+/// Based on system-specific statistics (mean and standard deviation).
+pub type FeelingThresholds {
+  FeelingThresholds(
+    /// Mean free energy (baseline)
+    mean: Float,
+    /// Standard deviation of free energy
+    std_dev: Float,
+  )
+}
+
+/// Default thresholds calibrated for PAD space.
+/// Mean and std_dev derived from typical emotional dynamics.
+pub fn default_thresholds() -> FeelingThresholds {
+  FeelingThresholds(mean: 0.5, std_dev: 0.3)
+}
+
+/// Compute raw prediction error between expected and actual state.
+/// Uses squared Euclidean distance (L2 loss).
 pub fn prediction_error(expected: Vec3, actual: Vec3) -> Float {
   vector.distance_squared(expected, actual)
 }
 
-/// Compute complexity term (prior divergence approximation).
+/// Compute precision-weighted prediction error.
 ///
-/// In full FEP, this is KL divergence between approximate and true posterior.
-/// Here we use a simplified version based on deviation from a baseline.
-pub fn complexity(current: Vec3, baseline: Vec3, weight: Float) -> Float {
+/// F_accuracy = Π · (expected - actual)²
+///
+/// Precision (Π) = 1/variance. Higher precision = more weight on prediction errors.
+/// This is critical for biological systems where uncertainty should attenuate errors.
+pub fn precision_weighted_prediction_error(
+  expected: Vec3,
+  actual: Vec3,
+  precision: Float,
+) -> Float {
+  let pe = prediction_error(expected, actual)
+  precision *. pe
+}
+
+/// Compute KL divergence between Gaussian distributions (closed form).
+///
+/// For two Gaussians with same variance:
+/// D_KL(N(μ₁,σ²) || N(μ₂,σ²)) = (μ₁ - μ₂)² / (2σ²)
+///
+/// This measures how much the posterior (current belief) diverges from prior.
+pub fn gaussian_kl_divergence(
+  posterior_mean: Vec3,
+  prior_mean: Vec3,
+  variance: Float,
+) -> Float {
+  let diff_squared = vector.distance_squared(posterior_mean, prior_mean)
+  case variance <=. 0.0 {
+    True -> 0.0
+    False -> diff_squared /. { 2.0 *. variance }
+  }
+}
+
+/// Compute complexity term using KL divergence.
+///
+/// Complexity = D_KL(q(θ) || p(θ))
+///
+/// Where q is posterior belief and p is prior belief (homeostatic setpoint).
+/// Weight controls the regularization strength.
+pub fn complexity(
+  current: Vec3,
+  baseline: Vec3,
+  prior_variance: Float,
+) -> Float {
+  gaussian_kl_divergence(current, baseline, prior_variance)
+}
+
+/// Legacy complexity function for backwards compatibility.
+pub fn complexity_weighted(
+  current: Vec3,
+  baseline: Vec3,
+  weight: Float,
+) -> Float {
   weight *. vector.distance_squared(current, baseline)
 }
 
-/// Compute free energy: F = prediction_error + complexity
+/// Compute full Free Energy: F = Π·(μ-o)² + D_KL(q||p)
 ///
 /// ## Parameters
-/// - expected: predicted/expected state
-/// - actual: observed/actual state
-/// - baseline: prior baseline state (e.g., personality)
-/// - complexity_weight: how much to weight complexity (default ~0.1)
+/// - expected: predicted/expected state (μ)
+/// - actual: observed/actual state (o)
+/// - baseline: prior baseline state (p) - e.g., personality/homeostatic setpoint
+/// - precision: inverse variance of predictions (Π)
+/// - prior_variance: variance of prior beliefs (for KL term)
 pub fn free_energy(
   expected: Vec3,
   actual: Vec3,
   baseline: Vec3,
-  complexity_weight: Float,
+  precision: Float,
+  prior_variance: Float,
 ) -> Float {
-  let pe = prediction_error(expected, actual)
-  let cx = complexity(actual, baseline, complexity_weight)
-  pe +. cx
+  let accuracy = precision_weighted_prediction_error(expected, actual, precision)
+  let cx = complexity(actual, baseline, prior_variance)
+  accuracy +. cx
 }
 
 /// Compute free energy and return full state with feeling.
+/// Uses normalized thresholds for feeling classification.
 pub fn compute_state(
+  expected: Vec3,
+  actual: Vec3,
+  baseline: Vec3,
+  precision: Float,
+  prior_variance: Float,
+  thresholds: FeelingThresholds,
+) -> FreeEnergyState {
+  let accuracy = precision_weighted_prediction_error(expected, actual, precision)
+  let cx = complexity(actual, baseline, prior_variance)
+  let fe = accuracy +. cx
+
+  FreeEnergyState(
+    free_energy: fe,
+    prediction_error: accuracy,
+    complexity: cx,
+    precision: precision,
+    feeling: classify_feeling_normalized(fe, thresholds),
+  )
+}
+
+/// Simplified compute_state with default thresholds and legacy interface.
+/// For backwards compatibility.
+pub fn compute_state_simple(
   expected: Vec3,
   actual: Vec3,
   baseline: Vec3,
   complexity_weight: Float,
 ) -> FreeEnergyState {
   let pe = prediction_error(expected, actual)
-  let cx = complexity(actual, baseline, complexity_weight)
+  let cx = complexity_weighted(actual, baseline, complexity_weight)
   let fe = pe +. cx
 
   FreeEnergyState(
     free_energy: fe,
     prediction_error: pe,
     complexity: cx,
+    precision: 1.0,
     feeling: classify_feeling(fe),
   )
 }
 
-/// Classify feeling based on free energy level.
+/// Classify feeling using normalized thresholds.
 ///
-/// Thresholds calibrated for PAD space (max distance ~3.46).
+/// - Homeostatic: F < μ - σ (better than expected)
+/// - Surprised: μ - σ ≤ F < μ (slightly worse)
+/// - Alarmed: μ ≤ F < μ + σ (worse than average)
+/// - Overwhelmed: F ≥ μ + σ (much worse)
+pub fn classify_feeling_normalized(
+  free_energy: Float,
+  thresholds: FeelingThresholds,
+) -> Feeling {
+  let lower = thresholds.mean -. thresholds.std_dev
+  let upper = thresholds.mean +. thresholds.std_dev
+
+  case free_energy {
+    fe if fe <. lower -> Homeostatic
+    fe if fe <. thresholds.mean -> Surprised
+    fe if fe <. upper -> Alarmed
+    _ -> Overwhelmed
+  }
+}
+
+/// Legacy classify_feeling with fixed thresholds.
+/// Calibrated for PAD space (max distance ~3.46).
 pub fn classify_feeling(free_energy: Float) -> Feeling {
   case free_energy {
     fe if fe <. 0.1 -> Homeostatic
@@ -105,6 +226,29 @@ pub fn classify_feeling(free_energy: Float) -> Feeling {
   }
 }
 
+/// Update thresholds based on observed free energy history.
+/// Uses exponential moving average for online learning.
+pub fn update_thresholds(
+  current: FeelingThresholds,
+  observed_fe: Float,
+  alpha: Float,
+) -> FeelingThresholds {
+  // EMA update for mean
+  let new_mean = alpha *. observed_fe +. { 1.0 -. alpha } *. current.mean
+
+  // Update variance estimate
+  let diff = observed_fe -. current.mean
+  let new_var = alpha *. { diff *. diff } +. { 1.0 -. alpha } *. { current.std_dev *. current.std_dev }
+
+  // Convert variance back to std_dev (sqrt = nth_root with n=2)
+  let new_std = case maths.nth_root(new_var, 2) {
+    Ok(s) -> s
+    Error(_) -> current.std_dev
+  }
+
+  FeelingThresholds(mean: new_mean, std_dev: float.max(new_std, 0.01))
+}
+
 /// Compute surprise for a single dimension.
 ///
 /// Surprise = -log(p(observation | model))
@@ -112,7 +256,7 @@ pub fn classify_feeling(free_energy: Float) -> Feeling {
 pub fn surprise(expected: Float, observed: Float, sigma: Float) -> Float {
   let diff = observed -. expected
   let sigma_sq = sigma *. sigma
-  case sigma_sq == 0.0 {
+  case sigma_sq <=. 0.0 {
     True -> 0.0
     False -> { diff *. diff } /. { 2.0 *. sigma_sq }
   }
@@ -131,11 +275,11 @@ pub fn active_inference_delta(
   vector.scale(diff, rate)
 }
 
-/// Precision-weighted prediction error.
+/// Precision-weighted prediction error for Vec3.
 ///
-/// Precision = 1/variance. Higher precision = more weight on that dimension.
+/// Each dimension can have different precision.
 /// Returns weighted sum of squared errors.
-pub fn precision_weighted_error(
+pub fn precision_weighted_error_vec(
   expected: Vec3,
   actual: Vec3,
   precisions: Vec3,
@@ -153,10 +297,8 @@ pub fn precision_weighted_error(
 pub fn estimate_precision(errors: List(Float)) -> Float {
   case list.length(errors) {
     0 -> 1.0
-    // Default precision
     1 -> 1.0
     n -> {
-      // Compute variance
       let n_float = int_to_float(n)
       let mean = list.fold(errors, 0.0, fn(acc, e) { acc +. e }) /. n_float
       let variance =
@@ -166,10 +308,8 @@ pub fn estimate_precision(errors: List(Float)) -> Float {
         })
         /. n_float
 
-      // Precision = 1/variance (with floor to avoid division by zero)
       case variance <. 0.001 {
-        True -> 100.0
-        // Very precise
+        True -> 100.0  // Very precise
         False -> 1.0 /. variance
       }
     }
@@ -180,8 +320,8 @@ pub fn estimate_precision(errors: List(Float)) -> Float {
 ///
 /// posterior ∝ likelihood × prior
 /// Using precision-weighted combination:
-/// new_belief = (precision_prior × prior + precision_likelihood × observation) /
-///              (precision_prior + precision_likelihood)
+/// new_belief = (Π_prior × prior + Π_likelihood × observation) /
+///              (Π_prior + Π_likelihood)
 pub fn belief_update(
   prior: Float,
   observation: Float,
@@ -189,7 +329,7 @@ pub fn belief_update(
   precision_likelihood: Float,
 ) -> Float {
   let total_precision = precision_prior +. precision_likelihood
-  case total_precision == 0.0 {
+  case total_precision <=. 0.0 {
     True -> prior
     False ->
       { precision_prior *. prior +. precision_likelihood *. observation }
@@ -200,8 +340,8 @@ pub fn belief_update(
 /// Generalized Free Energy (expected free energy for planning).
 ///
 /// G = ambiguity + risk
-/// - ambiguity: expected surprise under model
-/// - risk: KL divergence from preferred outcomes
+/// - ambiguity: expected surprise under model (epistemic value)
+/// - risk: KL divergence from preferred outcomes (pragmatic value)
 ///
 /// Used for action selection in active inference.
 pub fn generalized_free_energy(
@@ -209,13 +349,28 @@ pub fn generalized_free_energy(
   preferred_state: Vec3,
   uncertainty: Float,
 ) -> Float {
-  // Ambiguity term (entropy of predictions)
   let ambiguity = uncertainty
-
-  // Risk term (distance from preferences)
   let risk = vector.distance_squared(expected_state, preferred_state)
-
   ambiguity +. risk
+}
+
+/// Variational Free Energy bound.
+///
+/// F ≤ -log p(o) + D_KL(q||p)
+///
+/// The free energy bounds the negative log evidence (surprise).
+pub fn variational_bound(
+  observation_likelihood: Float,
+  kl_divergence: Float,
+) -> Float {
+  let neg_log_likelihood = case observation_likelihood <=. 0.0 {
+    True -> 100.0  // Large surprise for impossible observations
+    False -> case maths.natural_logarithm(observation_likelihood) {
+      Ok(log_l) -> 0.0 -. log_l
+      Error(_) -> 100.0
+    }
+  }
+  neg_log_likelihood +. kl_divergence
 }
 
 // Helper: convert int to float
@@ -228,7 +383,6 @@ fn int_to_float(n: Int) -> Float {
     4 -> 4.0
     5 -> 5.0
     _ -> {
-      // Recursive for larger numbers
       let half = n / 2
       let remainder = n - half * 2
       int_to_float(half) *. 2.0 +. int_to_float(remainder)

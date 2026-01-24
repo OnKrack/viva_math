@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2025-01-24
+
+### Added
+
+- **viva_math/free_energy** - Enhanced with DeepSeek R1 671B validation
+  - `precision_weighted_prediction_error` - Precision (Π) weighted errors
+  - `gaussian_kl_divergence` - Closed-form KL for Gaussian distributions
+  - `FeelingThresholds` type - Normalized thresholds (μ ± σ)
+  - `classify_feeling_normalized` - Statistics-based classification
+  - `update_thresholds` - Online learning with EMA
+  - `variational_bound` - F ≤ -log p(o) + D_KL(q||p)
+  - `compute_state` - Full FEP with precision and thresholds
+  - `compute_state_simple` - Legacy interface for backwards compatibility
+
+### Changed
+
+- **viva_math/free_energy**
+  - Formula updated to F = Π·(μ-o)² + D_KL(q||p) (validated by DeepSeek R1)
+  - `FreeEnergyState` now includes `precision` field
+  - `complexity` now uses proper KL divergence with prior variance
+
+### References
+
+- DeepSeek R1 671B (2025) - Mathematical validation
+- Parr & Friston (2019) "Generalised free energy and active inference"
+
 ## [1.0.0] - 2025-01-23
 
 ### Added
@@ -80,5 +106,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Oravecz et al. (2009) "O-U Process in Affective Dynamics"
 - Shannon (1948) "A Mathematical Theory of Communication"
 
-[Unreleased]: https://github.com/mrootx/viva_math/compare/v0.1.0...HEAD
-[1.0.0]: https://github.com/mrootx/viva_math/releases/tag/v0.1.0
+[Unreleased]: https://github.com/gabrielmaialva33/viva_math/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/gabrielmaialva33/viva_math/releases/tag/v1.1.0
+[1.0.0]: https://github.com/gabrielmaialva33/viva_math/releases/tag/v1.0.0

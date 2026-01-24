@@ -50,7 +50,7 @@ import viva_math/free_energy
 import viva_math/vector
 
 /// Library version
-pub const version = "0.1.0"
+pub const version = "1.1.0"
 
 /// Create a PAD vector with clamping.
 /// Shorthand for vector.pad/3.
@@ -71,6 +71,7 @@ pub fn is_volatile(arousal: Float, dominance: Float) -> Bool {
 }
 
 /// Compute free energy from expected and actual states.
+/// Uses simplified interface with default precision and thresholds.
 pub fn free_energy(
   expected: vector.Vec3,
   actual: vector.Vec3,
@@ -78,7 +79,7 @@ pub fn free_energy(
   // Use neutral baseline and default complexity weight
   let baseline = vector.zero()
   let complexity_weight = 0.1
-  free_energy.compute_state(expected, actual, baseline, complexity_weight)
+  free_energy.compute_state_simple(expected, actual, baseline, complexity_weight)
 }
 
 /// Compute Shannon entropy of a probability distribution.

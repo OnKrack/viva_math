@@ -251,7 +251,7 @@ pub fn prediction_error_nonzero_test() {
 pub fn free_energy_homeostatic_test() {
   // Low free energy should be homeostatic
   let state = Vec3(0.0, 0.0, 0.0)
-  let result = free_energy.compute_state(state, state, state, 0.1)
+  let result = free_energy.compute_state_simple(state, state, state, 0.1)
   should.equal(result.feeling, free_energy.Homeostatic)
 }
 
@@ -260,12 +260,49 @@ pub fn free_energy_alarmed_test() {
   let expected = Vec3(0.0, 0.0, 0.0)
   let actual = Vec3(1.0, 1.0, 0.0)
   let baseline = Vec3(0.0, 0.0, 0.0)
-  let result = free_energy.compute_state(expected, actual, baseline, 0.1)
+  let result = free_energy.compute_state_simple(expected, actual, baseline, 0.1)
   // Distance squared = 2.0 + complexity ~= 2.2, should be Alarmed or Overwhelmed
   should.be_true(
     result.feeling == free_energy.Alarmed
     || result.feeling == free_energy.Overwhelmed,
   )
+}
+
+pub fn free_energy_precision_weighted_test() {
+  // Higher precision should amplify prediction error
+  let expected = Vec3(0.0, 0.0, 0.0)
+  let actual = Vec3(1.0, 0.0, 0.0)
+
+  let low_precision = free_energy.precision_weighted_prediction_error(expected, actual, 0.5)
+  let high_precision = free_energy.precision_weighted_prediction_error(expected, actual, 2.0)
+
+  should.be_true(high_precision >. low_precision)
+  should.be_true(is_close(low_precision, 0.5, 0.001))
+  should.be_true(is_close(high_precision, 2.0, 0.001))
+}
+
+pub fn free_energy_gaussian_kl_test() {
+  // KL divergence between same distributions is 0
+  let state = Vec3(0.5, 0.3, -0.2)
+  let kl = free_energy.gaussian_kl_divergence(state, state, 1.0)
+  should.be_true(is_close(kl, 0.0, 0.001))
+}
+
+pub fn free_energy_normalized_thresholds_test() {
+  // Test normalized threshold classification
+  let thresholds = free_energy.FeelingThresholds(mean: 1.0, std_dev: 0.5)
+
+  // F < μ - σ = 0.5 → Homeostatic
+  should.equal(free_energy.classify_feeling_normalized(0.3, thresholds), free_energy.Homeostatic)
+
+  // μ - σ ≤ F < μ → Surprised
+  should.equal(free_energy.classify_feeling_normalized(0.7, thresholds), free_energy.Surprised)
+
+  // μ ≤ F < μ + σ → Alarmed
+  should.equal(free_energy.classify_feeling_normalized(1.2, thresholds), free_energy.Alarmed)
+
+  // F ≥ μ + σ → Overwhelmed
+  should.equal(free_energy.classify_feeling_normalized(2.0, thresholds), free_energy.Overwhelmed)
 }
 
 // ============================================================================
