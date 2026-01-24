@@ -7,26 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] - 2025-01-24
+
+### Added
+
+- **viva_math/cusp** - Stochastic Cusp Catastrophe (DeepSeek R1 proposal)
+  - `StochasticCuspParams` type with sigma (noise intensity) and seed
+  - `stochastic_gradient` - Gradient with Wiener process noise (dV/dx + σξ(t))
+  - `stochastic_step` - Euler-Maruyama integration step
+  - `simulate_stochastic` - Full trajectory simulation
+
+- **viva_math/entropy** - Hybrid Emotional States (DeepSeek R1 proposal)
+  - `hybrid_shannon` - Mixed entropy: H_hybrid = αH₁ + (1-α)H₂
+  - `KlSensitivity` type: Standard, ArousalWeighted, CustomGamma
+  - `kl_divergence_with_sensitivity` - D_KL^γ = γ(μ₁-μ₂)² + D_KL
+  - `renyi` - Rényi entropy of order α: H_α = (1/(1-α))log₂(Σp^α)
+
+- **viva_math/common** - Stochastic Utilities (inspired by viva_glyph)
+  - `deterministic_noise` - Hash-based pseudo-random noise [-1, 1]
+  - `wiener_increment` - Wiener process: √dt × ξ(t)
+  - `inverse_decay`, `inverse_sqrt_decay` - 1/(1+t/τ) decay functions
+
+- **viva_math/free_energy** - Full Gaussian KL
+  - `gaussian_kl_divergence_full` - Complete KL with variance terms
+
+### Changed
+
+- **viva_math/attractor** - basin_weights now uses exp(-γd) instead of 1/d
+  - Softmax with temperature: w_i = exp(-γd_i) / Σexp(-γd_j)
+  - Max-subtraction for numerical stability (pattern from viva_glyph)
+
+- **viva_math/free_energy** - Optimized log computation
+  - Uses log(σ₂) - log(σ₁) instead of log(σ₂/σ₁) for robustness when σ₁ ≈ 0
+
 ### Validated
 
-- **viva_math/attractor** - Validated by DeepSeek R1 671B
-  - PAD coordinates accurate (±0.05 from Mehrabian 1996)
-  - Softmax basin weights mathematically sound
-  - Linear spring force correct for O-U dynamics
-  - Suggested improvements: dimensional scaling, contextual modulation
+- All formulas validated by DeepSeek R1 671B via HuggingFace (2025-01-24)
+- 58 tests passing
 
-- **viva_math/entropy** - Validated by DeepSeek R1 671B
-  - Natural log (nats) correct for continuous emotion space
-  - Mutual information formula verified
-  - JS Divergence recommended for memory consolidation (bounded, symmetric)
-  - Numerical stability: use ε=1e-10 clipping
+### References
 
-### References (Validation)
-
-- DeepSeek R1 671B (2025-01-24) - Mathematical validation via HuggingChat
-- Mehrabian (1996) - PAD coordinates verified within ±0.05
-- Pessoa (2008) "The Cognitive-Emotional Brain" - Linear dynamics support
-- Fontaine et al. (2007) - Dimensional scaling recommendation
+- DeepSeek R1 671B (2025) - Formula proposals and validation
+- Euler-Maruyama method for stochastic differential equations
+- Rényi (1961) "On measures of entropy and information"
 
 ## [1.1.0] - 2025-01-24
 
@@ -127,6 +150,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Oravecz et al. (2009) "O-U Process in Affective Dynamics"
 - Shannon (1948) "A Mathematical Theory of Communication"
 
-[Unreleased]: https://github.com/gabrielmaialva33/viva_math/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/gabrielmaialva33/viva_math/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/gabrielmaialva33/viva_math/releases/tag/v1.2.0
 [1.1.0]: https://github.com/gabrielmaialva33/viva_math/releases/tag/v1.1.0
 [1.0.0]: https://github.com/gabrielmaialva33/viva_math/releases/tag/v1.0.0
